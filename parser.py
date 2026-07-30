@@ -169,28 +169,48 @@ def extract_takbis_data(pdf_path):
                         borc_m = re.search(r"([\d\.,]+)\s*(TL|EUR|USD|GBP)\b", main_line)
                         derece_m = re.search(r"\b(\d+)/(\d+)\b", main_line)
                         tarih_m = re.search(r"(\d{1,2}-\d{1,2}-\d{4})", main_line)
-                        yev_m = re.findall(r"\b(\d{4,7})\b", main_line)
 
                         if not (alacakli_m and borc_m and tarih_m):
                             continue
 
                         alacakli = alacakli_m.group(1).strip()
 
+                        # Yevmiye no genelde satır sonunda "- 29430" şeklinde durur.
+                        # Bazı belgelerde hücre sardığı için sadece "-" ile biter ve
+                        # asıl sayı bir alt satıra taşar (o satırda VKN devamı da
+                        # olabilir, ör. "VKN:3880023334 29430").
+                        name_extra = ""
+                        end_num_m = re.search(r"-\s*(\d{3,7})\s*$", main_line)
+                        if end_num_m:
+                            yevmiye = end_num_m.group(1)
+                        else:
+                            yevmiye = ""
+                            if main_idx + 1 < len(raw_lines):
+                                next_line = raw_lines[main_idx + 1]
+                                next_num_m = re.search(r"(\d{3,7})\s*$", next_line)
+                                if next_num_m:
+                                    yevmiye = next_num_m.group(1)
+                                    name_extra = next_line[:next_num_m.start()].strip()
+
                         # İsim, tablo satırı sarıldığı için bir sonraki satıra
                         # taşmış olabilir (ör. "BANKASI A.Ş. VKN:..."). Bu satır
-                        # yeni bir tablo/bölüm başlığı değilse isme ekle.
-                        stop_words = ("İpoteğin", "Taşınmaz", "Payda", "Tarih Yev", "Hisse")
-                        for l in raw_lines[main_idx + 1:main_idx + 2]:
-                            if not any(l.startswith(sw) for sw in stop_words):
-                                alacakli = f"{alacakli} {l}".strip()
-                            break
+                        # yeni bir tablo/bölüm başlığı ya da salt rakam değilse isme ekle.
+                        if name_extra:
+                            alacakli = f"{alacakli} {name_extra}".strip()
+                        else:
+                            stop_words = ("İpoteğin", "Taşınmaz", "Payda", "Tarih Yev", "Hisse")
+                            for l in raw_lines[main_idx + 1:main_idx + 2]:
+                                if re.fullmatch(r"\d+", l.strip()):
+                                    break
+                                if not any(l.startswith(sw) for sw in stop_words):
+                                    alacakli = f"{alacakli} {l}".strip()
+                                break
 
                         alacakli = re.sub(r"\s*VKN:\d+\s*", " ", alacakli)
                         alacakli = re.sub(r"\s+", " ", alacakli).strip()
                         borc = f"{borc_m.group(1)} {borc_m.group(2)}"
                         derece = derece_m.group(1) if derece_m else ""
                         tarih = tarih_m.group(1)
-                        yevmiye = yev_m[-1] if yev_m else ""
 
                         key = (alacakli, borc, derece, tarih, yevmiye)
                         if key in seen_ipotek:
